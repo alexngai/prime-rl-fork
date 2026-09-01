@@ -225,6 +225,38 @@ class EchoAlgoConfig(GRPOAlgoConfig):
     """Optional user-supplied filter narrowing the role-selected tokens."""
 
 
+class RTMCAlgoConfig(BaseAlgoConfig):
+    type: Literal["rtmc"] = "rtmc"
+    """RTMC (arXiv:2604.11037): step-level credit from a rollout-tree Monte-Carlo
+    estimate. Each turn is reduced to (state signature, action signature); first-visit
+    discounted returns aggregate across the group's rollouts in a tree; a turn's
+    advantage is ``Q(s,a) − V'(s)`` with the state value smoothed toward the group
+    success rate where visits are scarce, broadcast uniformly over the turn's action
+    tokens and consumed by the ``rl`` loss component. Same rollouts as GRPO — only the
+    credit assignment changes. Where the tree has no cross-rollout support (measured
+    front-loaded on agentic SWE: turns 0–15), the advantage degrades gracefully toward
+    the discounted group baseline."""
+
+    action_loss_type: ClassVar[ActionLossType] = "rl"
+
+    gamma: float = Field(0.99, gt=0.0, le=1.0)
+    """Per-turn discount on the terminal return (the paper's setting)."""
+
+    n_prior: float = Field(2.0, ge=0.0)
+    """Pseudo-count pulling low-visit state values toward the group success rate
+    (the paper's Eq. 11; at one visit the prior carries 2/3 of the value)."""
+
+    normalize: bool = True
+    """Divide the group's advantages by their std — sign-preserving, no centering
+    (the paper's optional per-group normalization)."""
+
+    content_hashes: bool = False
+    """Keep 4-hex content hashes in modify/exec signatures. Off by default: measured on
+    a 2,460-episode SWE-smith harvest, hashes are a state-divergence engine — dropping
+    them roughly doubles the informative overlap band at turns 5–14 (chorus docs/55
+    G-P1) at the cost of merging states that differ only in edit content."""
+
+
 class MaxRLAlgoConfig(BaseAlgoConfig):
     type: Literal["max_rl"] = "max_rl"
     """MaxRL (arXiv:2602.02710): scalar advantage = (reward − group mean) /
@@ -367,6 +399,7 @@ class SFTAlgoConfig(BaseAlgoConfig):
 AlgoConfig: TypeAlias = Annotated[
     GRPOAlgoConfig
     | EchoAlgoConfig
+    | RTMCAlgoConfig
     | MaxRLAlgoConfig
     | RAEAlgoConfig
     | HierarchicalGRPOAlgoConfig

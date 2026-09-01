@@ -31,6 +31,7 @@ from prime_rl.orchestrator.algo.opd import OPDAlgorithm
 from prime_rl.orchestrator.algo.opsd import OPSDAlgorithm
 from prime_rl.orchestrator.algo.rae import RAEAlgorithm
 from prime_rl.orchestrator.algo.routing import assign_advantages, stamp_loss_routing
+from prime_rl.orchestrator.algo.rtmc import RTMCAlgorithm
 from prime_rl.orchestrator.algo.sft import SFTDistillAlgorithm
 
 if TYPE_CHECKING:
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 ALGORITHM_CLASSES: dict[str, type[Algorithm]] = {
     "grpo": GRPOAlgorithm,
     "echo": EchoAlgorithm,
+    "rtmc": RTMCAlgorithm,
     "max_rl": MaxRLAlgorithm,
     "rae": RAEAlgorithm,
     "hierarchical_grpo": HierarchicalGRPOAlgorithm,
@@ -71,6 +73,7 @@ __all__ = [
     "OPDAlgorithm",
     "OPSDAlgorithm",
     "RAEAlgorithm",
+    "RTMCAlgorithm",
     "SFTDistillAlgorithm",
     "build_algorithm",
     "connect_frozen_client",
