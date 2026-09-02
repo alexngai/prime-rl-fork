@@ -74,12 +74,31 @@ def action_signature(block: str | None) -> str:
     words = []
     for chunk in re.split(r"[;&|]+", text.replace("\n", ";")):
         toks = chunk.split()
-        if toks and toks[0] not in _WRAPPERS and "=" not in toks[0]:
+        # Strip leading env assignments (PYTHONPATH=... cmd) and wrappers WITHIN the
+        # chunk — skipping the whole chunk dumped every env-prefixed command into
+        # `other` (measured on s2gate3: 35 PYTHONPATH-prefixed test/exec commands).
+        # `cd` consumes its directory argument; a chunk it exhausts falls through to
+        # the next one (so `cd /testbed && pytest` still classifies as the pytest).
+        while toks:
+            if "=" in toks[0] and "/" not in toks[0].split("=", 1)[0]:
+                toks = toks[1:]
+            elif toks[0] == "cd":
+                toks = toks[2:] if len(toks) > 1 else []
+            elif toks[0] in _WRAPPERS:
+                toks = toks[1:]
+            else:
+                break
+        if toks and not toks[0].startswith("-"):
             words = toks
             break
     if not words:
-        return f"other:{_hash4(text)}"
-    cmd = words[0]
+        # A lone wrapper (bare `cd /testbed`) navigates without acting.
+        return "noop"
+    # Basename the command so absolute interpreters classify (/usr/bin/python3,
+    # /usr/local/bin/pytest — 70+ occurrences in s2gate3 all landed in `other`).
+    cmd = words[0].rsplit("/", 1)[-1]
+    if cmd in ("pip", "pip3", "uv", "conda", "apt-get", "apt"):
+        return "pkg"
 
     redir = _REDIRECT.search(text)
     if redir and cmd != "grep":
@@ -133,7 +152,7 @@ def apply_action(state: dict, asig: str) -> None:
             flag = "test:" + rest.rsplit(":", 1)[1] if rest and ":" in rest else "test"
         else:
             flag = {"submit": "submit", "git": cat, "exec": "exec",
-                    "other": "other", "search": "S", "noop": "noop"}.get(kind, kind)
+                    "other": "other", "search": "S", "noop": "noop", "pkg": "pkg"}.get(kind, kind)
         state.setdefault("_flags", set()).add(flag)
 
 

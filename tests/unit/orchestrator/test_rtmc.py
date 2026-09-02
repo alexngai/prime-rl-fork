@@ -120,3 +120,48 @@ def test_content_hash_toggle_uses_coarse_signatures():
     assert tree[("", "A")] == [1, 1.0] and tree[("", "B")] == [1, 0.0]
     adv = advantages(group, gamma=1.0, normalize=False)
     assert adv[0][0] == 0.5 and adv[1][0] == -0.5
+
+
+def test_tool_call_native_actions():
+    # prime-rl's mini-swe harness is tool-call native: the command arrives in
+    # tool_calls, content is prose (measured s2gate3: 2,359/2,359 turns).
+    from verifiers.v1.types import ToolCall
+    ep = _episode(["placeholder"], reward=1.0)
+    node = [n for n in ep.traces[0].nodes if any(n.mask)][0]
+    node.message = AssistantMessage(
+        content="I'll look at the file first.",
+        tool_calls=[ToolCall(id="c0", name="bash", arguments='{"command": "cat core.py"}')],
+    )
+    steps = trace_steps(ep.traces[0])
+    assert steps[0][1] == "view:full@core.py"
+
+
+def test_classifier_online_command_styles():
+    from prime_rl.orchestrator.algo.rtmc_sig import action_signature
+    # env prefixes + absolute interpreters + cd chains (the s2gate3 `other` bucket)
+    assert action_signature(
+        "cd /testbed && PYTHONPATH=/testbed/src /usr/bin/python3 -m pytest tests/t.py"
+    ) == "test@tests/t.py"
+    assert action_signature("pip install -e .") == "pkg"
+    assert action_signature("cd /testbed") == "noop"
+    assert action_signature("/usr/local/bin/pytest") == "test@all"
+
+
+def test_branch_boundary_bounds_observation():
+    # A re-render forks a new branch whose leading nodes are re-rendered HISTORY —
+    # the observation span must stop at the parent-chain break.
+    from verifiers.v1.types import ToolCall
+    ep = _episode(["python -m pytest tests/t.py"], reward=1.0,
+                  obs="[command exited with status 0]")
+    tr = ep.traces[0]
+    # append a branch: unsampled context node re-parented to the root, then a turn
+    tr.nodes.append(_node(AssistantMessage(content="old turn replay"), parent=0,
+                          sampled=False, token_ids=[50]))
+    tr.nodes.append(_node(ToolMessage(tool_call_id="t", content="[command exited with status 1]"),
+                          parent=len(tr.nodes) - 1, sampled=False, token_ids=[51]))
+    tr.nodes.append(_node(AssistantMessage(content="```bash\ncat a.py\n```"),
+                          parent=len(tr.nodes) - 1, sampled=True, token_ids=[52]))
+    steps = trace_steps(tr)
+    # the first turn's observation is its DIRECT tool node (status 0), not the
+    # branch's replayed status-1 node
+    assert steps[0][1] == "test@tests/t.py:ok"
