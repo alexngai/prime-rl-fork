@@ -165,3 +165,27 @@ def test_branch_boundary_bounds_observation():
     # the first turn's observation is its DIRECT tool node (status 0), not the
     # branch's replayed status-1 node
     assert steps[0][1] == "test@tests/t.py:ok"
+
+
+def test_grpo_turn_discount_shapes_unanimous_groups():
+    # docs/56: with turn_discount, a unanimous-SUCCESS group with different lengths
+    # becomes trainable — the shorter solve out-credits the longer one.
+    from prime_rl.orchestrator.algo import GRPOAlgorithm
+    ep_fast = _episode(["cat a.py"], reward=1.0)                      # 1 turn
+    ep_slow = _episode(["cat a.py", "cat b.py", "cat c.py"], reward=1.0)  # 3 turns
+    algo = GRPOAlgorithm(_ALGO.validate_python({"type": "grpo", "turn_discount": 0.9}),
+                         MagicMock())
+    asyncio.run(algo.score_group([ep_fast, ep_slow]))
+    fast = [a for n in ep_fast.traces[0].nodes if n.advantages for a in n.advantages]
+    slow = [a for n in ep_slow.traces[0].nodes if n.advantages for a in n.advantages]
+    # shaped rewards: 0.9 vs 0.9^3=0.729; baseline = mean -> fast positive, slow negative
+    assert fast and slow and fast[0] > 0 > slow[0]
+    import math
+    assert math.isclose(fast[0], (0.9 - (0.9 + 0.9 ** 3) / 2), rel_tol=1e-5)
+    # default (no discount): same group is unanimous -> zero advantage everywhere
+    ep_a = _episode(["cat a.py"], reward=1.0)
+    ep_b = _episode(["cat a.py", "cat b.py", "cat c.py"], reward=1.0)
+    vanilla = GRPOAlgorithm(_ALGO.validate_python({"type": "grpo"}), MagicMock())
+    asyncio.run(vanilla.score_group([ep_a, ep_b]))
+    advs = [a for ep in (ep_a, ep_b) for n in ep.traces[0].nodes if n.advantages for a in n.advantages]
+    assert all(abs(a) < 1e-9 for a in advs)

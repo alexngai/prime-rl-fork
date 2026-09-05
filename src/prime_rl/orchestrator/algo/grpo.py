@@ -21,10 +21,18 @@ class GRPOAlgorithm(Algorithm):
     def __init__(self, config: GRPOAlgoConfig, clients: InferenceClient):
         super().__init__(config, clients)
         self.length_penalty = config.length_penalty
+        self.turn_discount = config.turn_discount
 
     async def score_group(self, episodes: list[vf.Episode]) -> None:
         traces = [trace for _, trace in iter_trainable_traces(episodes)]
         rewards = torch.tensor([trace.reward for trace in traces], dtype=torch.float32)
+        if self.turn_discount is not None:
+            # Objective shaping (docs/56): reward decays per agent turn, so the group
+            # baseline compares length-adjusted outcomes — "solved in 20 turns" beats
+            # "solved in 45" and unanimous-success groups carry gradient.
+            turns = torch.tensor([trace.num_turns for trace in traces], dtype=rewards.dtype)
+            rewards = rewards * torch.pow(
+                torch.tensor(self.turn_discount, dtype=rewards.dtype), turns)
         length_penalty = self.length_penalty
         if length_penalty is None:
             advantages = rewards - rewards.mean()

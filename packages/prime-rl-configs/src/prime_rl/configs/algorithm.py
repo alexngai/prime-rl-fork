@@ -207,6 +207,16 @@ class GRPOAlgoConfig(BaseAlgoConfig):
     length_penalty: LengthPenaltyConfig | None = None
     """Linear length penalty subtracted from each reward before the GRPO baseline (see ``LinearLengthPenaltyConfig``): a ``pass_rate``-scaled sum of output-token, input-token, and turns terms, each normalized by the group's own max for that quantity. None disables it."""
 
+    turn_discount: float | None = Field(None, gt=0.0, le=1.0)
+    """Multiplicative per-turn reward discount: each trace's reward is shaped to
+    ``reward × turn_discount ** num_turns`` BEFORE the group baseline. Trains
+    turn-budget efficiency — most immediately completion detection ("recognize done,
+    submit, stop"): measured on a 2,460-episode SWE-smith harvest, the median SOLVED
+    cap-250 episode ran all 250 turns because the agent never submits (chorus docs/56).
+    Unlike ``length_penalty`` this is objective shaping, not normalization: unanimous
+    -success groups with different lengths become trainable ("solve faster/stop
+    sooner"), the mechanism RTMC's γ exposes. None disables (vanilla GRPO)."""
+
 
 class EchoAlgoConfig(GRPOAlgoConfig):
     type: Literal["echo"] = "echo"  # type: ignore[assignment]
